@@ -369,8 +369,9 @@
     } catch (e) { return new Date().getHours(); }
   }
 
-  function fetchMonth(month) {
-    if (!CONFIG.endpointId || !CONFIG.keyId) return Promise.reject(new Error("not configured"));
+  var lastGridError = "";
+
+  function fetchOnce(month) {
     var url = "https://queries.clickhouse.cloud/run/" + CONFIG.endpointId +
               "?format=JSON&param_country=" + encodeURIComponent(CONFIG.country) +
               "&param_month=" + month;
@@ -378,20 +379,45 @@
     return fetch(url, { method:"GET", headers:{ Authorization:"Basic " + btoa(CONFIG.keyId + ":" + CONFIG.keySecret) } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
       .then(function (text) {
-        var rows, stats = {};
+        var rows = null, stats = {};
         try {
           var j = JSON.parse(text);
           rows = j.data || (Array.isArray(j) ? j : null);
           stats = j.statistics || {};
+          // An idle ClickHouse service answers 200 with a message, not rows.
+          if (!rows && (j.error || j.message || j.status)) {
+            throw new Error(String(j.error || j.message || j.status).slice(0, 90));
+          }
         } catch (e) {
+          if (text.trim().charAt(0) === "{" && text.indexOf("\n") === -1) throw e;
           rows = text.trim().split("\n").filter(Boolean).map(function (l) { return JSON.parse(l); });
         }
-        if (!rows || rows.length !== 24) throw new Error("expected 24 hours");
+        if (!rows || rows.length !== 24) {
+          throw new Error("expected 24 rows, got " + (rows ? rows.length : 0));
+        }
         var p = new Array(24), c = new Array(24);
         rows.forEach(function (row) { p[+row.local_hour] = +row.eur_per_mwh; c[+row.local_hour] = +row.g_co2_per_kwh; });
         return { p:p, c:c, live:true, rows:stats.rows_read || 0,
                  ms: stats.elapsed ? stats.elapsed * 1000 : (performance.now() - t0) };
       });
+  }
+
+  // ClickHouse Cloud parks an idle service. The first query after a quiet
+  // spell wakes it and fails; the next one succeeds. So try three times,
+  // a few seconds apart, instead of giving up on stage.
+  function fetchMonth(month, attempt) {
+    if (!CONFIG.endpointId || !CONFIG.keyId) {
+      lastGridError = "no credentials";
+      return Promise.reject(new Error(lastGridError));
+    }
+    attempt = attempt || 1;
+    return fetchOnce(month).catch(function (err) {
+      lastGridError = err.message;
+      if (attempt >= 3) throw err;
+      $("chipCHText").textContent = "ClickHouse · waking up… (" + attempt + "/3)";
+      return new Promise(function (res) { setTimeout(res, 3500); })
+        .then(function () { return fetchMonth(month, attempt + 1); });
+    });
   }
 
   function loadAppliances() {
@@ -450,7 +476,8 @@
     } else {
       ch.className = "chip";
       $("chipCHText").textContent = (CONFIG.endpointId && CONFIG.keyId)
-        ? "ClickHouse · offline copy" : "ClickHouse · not connected";
+        ? "ClickHouse · offline copy" + (lastGridError ? " (" + lastGridError + ")" : "")
+        : "ClickHouse · not connected";
     }
     pg.className = pgLive ? "chip on" : "chip";
     $("chipPGText").textContent = pgLive ? "Postgres · live" : "Postgres · built-in list";
