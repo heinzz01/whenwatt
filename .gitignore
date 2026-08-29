@@ -1,0 +1,5 @@
+# Credentials. Never commit this - it holds the ClickHouse API key.
+config.js
+
+.DS_Store
+node_modules/

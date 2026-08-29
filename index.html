@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhenWatt — when to charge, and what it saves</title>
+<meta name="description" content="The cheapest window to charge your EV or run your heat pump, from eight years of German grid data.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1F1A">
+<meta property="og:title" content="WhenWatt">
+<meta property="og:description" content="Your car doesn't care when it charges. You should.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#9889;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* one committed palette - deep green, mint for good, ember for bad */
+    --bg:#0E1F1A;        /* page */
+    --panel:#16302A;     /* cards */
+    --panel-2:#112620;   /* recessed controls */
+    --line:#2A4A40;
+    --line-2:#3A6153;
+    --ink:#E8F0EC;       /* primary text */
+    --ink-2:#A9C2B8;     /* secondary text */
+    --ink-3:#7E9A90;     /* muted */
+    --good:#4ADE9B;      /* mint */
+    --good-bg:#14332A;
+    --bad:#F59E5B;       /* ember */
+    --bad-bg:#2A1D12;
+    --bar:#1F3B33;       /* unhighlighted chart bars */
+    --grid:#1D372F;
+    --r:16px;
+    --sans:"Inter", ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono:"Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1000px; margin:0 auto; padding:0 24px 72px; }
+
+  .topbar {
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:22px 0 20px; border-bottom:1px solid var(--line); margin-bottom:28px; flex-wrap:wrap;
+  }
+  .logo { display:flex; align-items:center; gap:9px; font-weight:700; font-size:15px; letter-spacing:-.01em; }
+  .logo .mark {
+    width:22px; height:22px; border-radius:6px; background:var(--good); color:var(--bg);
+    display:grid; place-items:center; font-size:12px;
+  }
+  .chips { display:flex; gap:7px; flex-wrap:wrap; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500;
+    padding:5px 10px; border-radius:999px; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink-3); font-family:var(--mono);
+  }
+  .chip .d { width:6px; height:6px; border-radius:50%; background:var(--ink-3); flex:none; }
+  .chip.on { color:var(--good); border-color:color-mix(in srgb, var(--good) 32%, var(--line)); background:var(--good-bg); }
+  .chip.on .d { background:var(--good); }
+
+  h1 { font-size:clamp(19px,2.3vw,23px); line-height:1.3; margin:0 0 22px; letter-spacing:-.015em; font-weight:600; color:var(--ink-2); max-width:52ch; }
+
+  .controls { display:flex; flex-direction:column; gap:12px; margin-bottom:22px; }
+  .appliances { display:flex; gap:9px; flex-wrap:wrap; }
+  .app {
+    text-align:left; font:inherit; cursor:pointer; padding:11px 15px; border-radius:12px;
+    border:1px solid var(--line); background:var(--panel); color:var(--ink-2);
+    transition:border-color .14s, background .14s;
+  }
+  .app:hover { border-color:var(--line-2); }
+  .app .n { display:block; font-size:14px; font-weight:600; color:var(--ink); letter-spacing:-.01em; }
+  .app .m { display:block; font-size:11.5px; font-family:var(--mono); color:var(--ink-3); margin-top:2px; }
+  .app[aria-pressed="true"] { border-color:var(--good); background:var(--good); }
+  .app[aria-pressed="true"] .n { color:var(--bg); }
+  .app[aria-pressed="true"] .m { color:color-mix(in srgb, var(--bg) 72%, transparent); }
+  .app.add { border-style:dashed; display:grid; place-items:center; min-width:112px; }
+  .app.add .n { color:var(--ink-3); font-size:13px; }
+
+  .row2 { display:flex; gap:9px; flex-wrap:wrap; align-items:center; }
+  .seg { display:inline-flex; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:3px; gap:2px; }
+  .seg button {
+    font:inherit; font-size:13.5px; font-weight:550; border:0; background:transparent; color:var(--ink-3);
+    padding:7px 14px; border-radius:7px; cursor:pointer; transition:background .14s,color .14s;
+  }
+  .seg button[aria-pressed="true"] { background:var(--panel); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.35); }
+  select {
+    font:inherit; font-size:13.5px; font-weight:550; color:var(--ink); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:10px; padding:9px 13px; cursor:pointer;
+  }
+
+  form.addbox {
+    display:none; gap:8px; flex-wrap:wrap; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+  }
+  form.addbox.open { display:flex; }
+  form.addbox input {
+    font:inherit; font-size:13.5px; color:var(--ink); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:9px; padding:9px 12px;
+  }
+  form.addbox input[type=text] { flex:1 1 200px; min-width:150px; }
+  form.addbox input[type=number] { width:120px; font-family:var(--mono); }
+  form.addbox button {
+    font:inherit; font-size:13.5px; font-weight:600; border:0; border-radius:9px;
+    padding:10px 16px; cursor:pointer; background:var(--good); color:var(--bg);
+  }
+  form.addbox button.ghost { background:transparent; color:var(--ink-3); font-weight:500; }
+  form.addbox .err { flex-basis:100%; font-size:13px; color:var(--bad); }
+
+  .hero { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:34px 32px 32px; margin-bottom:14px; }
+  .eyebrow {
+    font-size:11px; font-weight:600; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--ink-3); font-family:var(--mono); margin-bottom:16px;
+  }
+  .window { font-size:clamp(44px,7vw,74px); font-weight:700; letter-spacing:-.05em; line-height:1; color:var(--good); font-variant-numeric:tabular-nums; }
+  .window .dash { color:var(--ink-3); font-weight:300; margin:0 6px; }
+  .whytext { color:var(--ink); font-size:16px; font-weight:500; margin:22px 0 0; max-width:56ch; }
+  .whytext .g { color:var(--good); font-weight:600; }
+  .whytext .e { color:var(--bad); font-weight:600; }
+
+  .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; margin-bottom:14px; }
+  .cards .c { background:var(--panel); padding:19px 22px 20px; }
+  .cards .lbl { display:block; font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3); font-family:var(--mono); margin-bottom:9px; }
+  .cards .val { display:block; font-size:27px; font-weight:650; font-variant-numeric:tabular-nums; letter-spacing:-.025em; }
+  .cards .sub { display:block; font-size:12.5px; color:var(--ink-3); font-family:var(--mono); margin-top:5px; }
+  .cards .best .val { color:var(--good); }
+  .cards .worst .val { color:var(--bad); }
+
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:24px 26px; margin-bottom:14px; }
+  .panel h2 { font-size:14px; margin:0 0 3px; font-weight:650; letter-spacing:-.01em; }
+  .panel .note { font-size:13.5px; color:var(--ink-2); margin:0 0 20px; max-width:66ch; }
+
+  .chart-wrap { position:relative; overflow-x:auto; }
+  svg { display:block; width:100%; height:auto; min-width:560px; }
+  .tip {
+    position:absolute; pointer-events:none; opacity:0; transition:opacity .1s;
+    background:var(--ink); color:var(--bg); border-radius:9px; padding:9px 11px;
+    font-size:12px; font-family:var(--mono); line-height:1.55; white-space:nowrap; z-index:3;
+    transform:translate(-50%,-100%); box-shadow:0 8px 24px rgba(0,0,0,.5);
+  }
+  .tip.show { opacity:1; }
+  .legend { display:flex; gap:20px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-2); margin-top:16px; font-family:var(--mono); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:7px; }
+
+  .flag { display:block; background:var(--bad-bg); border-left:3px solid var(--bad); border-radius:0 var(--r) var(--r) 0; padding:18px 24px; margin-bottom:14px; }
+  .flag[hidden] { display:none; }
+  .flag-body strong { display:block; color:var(--bad); font-weight:650; font-size:15px; margin-bottom:5px; }
+  .flag-body span { font-size:13.5px; color:var(--ink-2); font-family:var(--mono); }
+
+  .year { display:flex; flex-wrap:wrap; gap:44px; align-items:baseline; }
+  .year .v { font-size:34px; font-weight:700; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+  .year .k { font-size:12.5px; color:var(--ink-3); font-family:var(--mono); margin-top:2px; }
+
+  details.sql { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:18px 26px; margin-bottom:14px; }
+  details.sql summary { cursor:pointer; font-size:13.5px; font-weight:600; color:var(--ink-2); list-style:none; }
+  details.sql summary::-webkit-details-marker { display:none; }
+  details.sql summary::before { content:"▸  "; color:var(--ink-3); }
+  details.sql[open] summary::before { content:"▾  "; }
+  details.sql pre { margin:16px 0 0; padding:17px; background:var(--panel-2); border-radius:10px; overflow-x:auto; font-size:12px; line-height:1.65; font-family:var(--mono); color:var(--ink-2); }
+
+  footer { margin-top:38px; padding-top:22px; border-top:1px solid var(--line); font-size:12.5px; color:var(--ink-3); line-height:1.7; }
+  footer strong { color:var(--ink-2); font-weight:600; }
+
+  @media (max-width:760px) {
+    .hero, .compare { grid-template-columns:1fr; }
+    .year { gap:26px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="logo"><span class="mark">⚡</span> WhenWatt</div>
+    <div class="chips">
+      <span class="chip" id="chipCH"><span class="d"></span><span id="chipCHText">grid</span></span>
+      <span class="chip" id="chipPG"><span class="d"></span><span id="chipPGText">appliances</span></span>
+    </div>
+  </div>
+
+  <h1>Your car doesn't care when it charges. You should.</h1>
+
+  <div class="controls">
+    <div class="appliances" id="applianceRow"></div>
+    <form class="addbox" id="addBox" autocomplete="off">
+      <input type="text" id="fName" placeholder="Appliance name" required maxlength="60">
+      <input type="number" id="fKwh" placeholder="kWh per use" step="0.1" min="0.01" max="500" required>
+      <input type="number" id="fHours" placeholder="hours needed" step="1" min="1" max="24" required>
+      <button type="submit" id="fSave">Add</button>
+      <button type="button" class="ghost" id="fCancel">Cancel</button>
+      <div class="err" id="fErr" hidden></div>
+    </form>
+    <div class="row2">
+      <div class="seg" role="group" aria-label="Optimise for">
+        <button id="m-money" aria-pressed="true">Money</button>
+        <button id="m-co2" aria-pressed="false">Carbon</button>
+      </div>
+      <select id="month" aria-label="Month"></select>
+      <select id="freq" aria-label="How often">
+        <option value="365">every day</option>
+        <option value="104">twice a week</option>
+        <option value="48" selected>4× a month</option>
+        <option value="12">once a month</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="eyebrow" id="eyebrow">—</div>
+    <div class="window" id="windowText">—</div>
+    <p class="whytext" id="whyText"></p>
+  </div>
+
+  <div class="cards">
+    <div class="c best">
+      <span class="lbl">Best window</span>
+      <span class="val" id="bestVal">—</span>
+      <span class="sub" id="bestSub">—</span>
+    </div>
+    <div class="c worst">
+      <span class="lbl" id="worstLbl">Worst window</span>
+      <span class="val" id="worstVal">—</span>
+      <span class="sub" id="worstSub">—</span>
+    </div>
+    <div class="c">
+      <span class="lbl">You save</span>
+      <span class="val" id="saveEur">—</span>
+      <span class="sub" id="saveCo2">—</span>
+    </div>
+  </div>
+
+  <div class="flag" id="conflict" hidden>
+    <div class="flag-body">
+      <strong id="conflictTitle"></strong>
+      <span id="conflictText"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>The day, hour by hour</h2>
+    <p class="note" id="chartNote"></p>
+    <div class="chart-wrap" id="chartWrap">
+      <svg id="chart" viewBox="0 0 900 300" role="img" aria-label="Price and carbon intensity by hour"></svg>
+      <div class="tip" id="tip"></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--good)"></i>best window</span>
+      <span><i style="background:var(--bad)"></i>worst window</span>
+      <span><i style="background:var(--ink-3)"></i>carbon intensity</span>
+      <span><i style="background:var(--ink);width:3px;border-radius:2px"></i>now in Berlin</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Over a year</h2>
+    <p class="note" id="yearNote"></p>
+    <div class="year">
+      <div><div class="v" id="yearEur">—</div><div class="k">saved per year</div></div>
+      <div><div class="v" id="yearCo2">—</div><div class="k">CO₂ avoided per year</div></div>
+      <div><div class="v" id="yearRuns">—</div><div class="k">runs per year</div></div>
+    </div>
+  </div>
+
+  <details class="sql">
+    <summary>The two queries behind this answer</summary>
+    <pre id="sqlText"></pre>
+  </details>
+
+  <footer>
+    Queried live from 6.3M rows in ClickHouse · 8 years · Germany, DE-LU · local time<br>
+    Data: Energy-Charts, Fraunhofer ISE · CC BY 4.0 · assumes a dynamic tariff
+  </footer>
+
+</div>
+
+<script src="config.js" onerror="console.warn('config.js not found - running on built-in data')"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==========================================================
+  // Credentials live in config.js, next to this file - never here.
+  // That file is yours: edit it once, and every future version of
+  // index.html picks it up without you retyping anything.
+  //
+  // If config.js is missing, the page runs on its built-in copy
+  // of the data and stays fully usable.
+  // ==========================================================
+  var CONFIG = Object.assign(
+    { endpointId: "", keyId: "", keySecret: "", country: "de" },
+    (typeof window !== "undefined" && window.WHENWATT_CONFIG) || {}
+  );
+
+  // Supabase publishable key - designed to sit in the browser.
+  // Row Level Security is what protects the table, not secrecy.
+  var SB  = "https://wuripisqwcisxntuqipd.supabase.co";
+  var SBK = "sb_publishable_TLzD3MUjogJBjscXU87J2A_N_9hNaAH";
+  var SBH = { apikey: SBK, Authorization: "Bearer " + SBK };
+
+  var SQL =
+    "-- ClickHouse: the grid. 6.3M rows, sliced by country and month.\n" +
+    "SELECT local_hour,\n" +
+    "       round(avg(eur_per_mwh), 1)   AS eur_per_mwh,\n" +
+    "       round(avg(g_co2_per_kwh), 0) AS g_co2_per_kwh\n" +
+    "FROM grid_hourly\n" +
+    "WHERE country = {country:String}\n" +
+    "  AND toMonth(ts) = {month:UInt8}\n" +
+    "GROUP BY local_hour\n" +
+    "ORDER BY local_hour;\n\n" +
+    "-- Postgres: what this household actually owns.\n" +
+    "SELECT id, name, kwh_per_use, hours_needed\n" +
+    "FROM appliances\n" +
+    "ORDER BY id;";
+
+  var FALLBACK = {
+    1:  {p:[78,73,70,68,68,73,86,103,116,113,107,103,99,97,99,106,114,127,125,115,104,95,91,81],
+         c:[380,374,371,371,373,379,384,386,385,379,371,364,363,367,378,393,398,391,388,391,393,392,392,386]},
+    2:  {p:[74,71,69,68,69,74,87,103,109,100,89,83,78,75,77,85,95,111,118,110,98,89,86,77],
+         c:[358,353,353,354,356,363,368,367,357,345,331,319,313,314,325,347,372,378,371,369,370,368,367,363]},
+    3:  {p:[93,88,87,85,87,94,112,122,116,97,80,71,63,59,63,77,95,122,145,146,126,111,106,95],
+         c:[406,404,407,405,408,412,406,386,358,331,305,287,279,281,292,320,362,401,407,403,405,408,410,410]},
+    4:  {p:[83,78,76,75,77,82,98,109,104,85,67,55,44,34,32,40,52,74,100,123,126,109,99,88],
+         c:[378,378,379,381,386,390,381,360,331,298,264,241,230,226,227,236,257,296,344,371,376,377,381,381]},
+    5:  {p:[92,85,82,81,82,87,99,104,95,76,59,49,40,30,28,36,50,73,99,120,132,122,110,98],
+         c:[370,370,371,373,376,379,361,326,290,256,229,214,206,204,206,214,231,264,308,343,363,367,369,371]},
+    6:  {p:[104,96,91,88,88,92,107,113,106,88,73,63,56,49,46,53,65,86,110,138,156,149,132,112],
+         c:[411,409,407,407,409,407,383,348,313,278,250,232,223,221,223,232,250,283,325,363,390,403,406,411]},
+    7:  {p:[125,114,108,105,104,110,127,133,127,108,90,79,68,59,54,60,74,97,124,149,165,160,150,134],
+         c:[420,418,416,416,417,414,393,359,322,285,255,236,225,220,220,227,246,280,323,363,393,406,410,418]},
+    8:  {p:[145,135,131,127,127,136,156,164,159,141,122,107,94,84,83,93,108,137,167,197,203,184,168,151],
+         c:[430,430,430,432,436,438,423,390,350,310,275,251,239,235,238,249,273,314,361,395,412,417,422,428]},
+    9:  {p:[113,105,104,102,104,115,145,169,166,145,123,107,94,85,85,95,113,145,181,219,190,154,137,120],
+         c:[428,426,429,431,436,444,438,417,389,358,325,299,284,280,285,303,337,384,423,433,432,436,435,432]},
+    10: {p:[78,73,68,66,68,76,98,124,133,115,99,88,78,72,74,84,100,127,151,157,124,104,96,83],
+         c:[376,376,370,374,377,387,392,386,373,357,338,321,309,308,317,340,371,395,396,390,390,389,388,383]},
+    11: {p:[90,83,80,77,79,86,105,129,137,130,123,119,116,117,125,137,148,168,161,143,123,109,105,92],
+         c:[416,406,405,405,408,415,419,418,409,398,388,381,381,391,408,427,430,417,415,418,423,423,425,421]},
+    12: {p:[97,94,90,87,88,95,112,140,155,156,151,150,145,144,149,156,165,175,165,153,137,122,117,101],
+         c:[375,378,376,377,379,384,389,391,388,381,374,369,371,378,390,398,393,383,383,386,387,386,386,382]}
+  };
+
+  var FALLBACK_APPLIANCES = [
+    { id:-1, name:"Electric car", kwh_per_use:60, hours_needed:6 },
+    { id:-2, name:"Heat pump",    kwh_per_use:30, hours_needed:8 }
+  ];
+
+  var MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
+
+  var cache = {}, appliances = [], gridStatus = null, pgLive = false;
+  var state = { applianceId:null, mode:"money", month:new Date().getMonth()+1, runs:48, freqTouched:false };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var hh = function (h) { return ((h % 24) + 24) % 24; };
+  var pad = function (h) { return (hh(h) < 10 ? "0" : "") + hh(h) + ":00"; };
+  var eur = function (v) { return "€" + v.toFixed(2); };
+  var num = function (n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
+
+  $("sqlText").textContent = SQL;
+
+  function berlinHour() {
+    try {
+      return +new Intl.DateTimeFormat("en-GB", { timeZone:"Europe/Berlin", hour:"2-digit", hour12:false })
+        .format(new Date());
+    } catch (e) { return new Date().getHours(); }
+  }
+
+  function fetchMonth(month) {
+    if (!CONFIG.endpointId || !CONFIG.keyId) return Promise.reject(new Error("not configured"));
+    var url = "https://queries.clickhouse.cloud/run/" + CONFIG.endpointId +
+              "?format=JSON&param_country=" + encodeURIComponent(CONFIG.country) +
+              "&param_month=" + month;
+    var t0 = performance.now();
+    return fetch(url, { method:"GET", headers:{ Authorization:"Basic " + btoa(CONFIG.keyId + ":" + CONFIG.keySecret) } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(function (text) {
+        var rows, stats = {};
+        try {
+          var j = JSON.parse(text);
+          rows = j.data || (Array.isArray(j) ? j : null);
+          stats = j.statistics || {};
+        } catch (e) {
+          rows = text.trim().split("\n").filter(Boolean).map(function (l) { return JSON.parse(l); });
+        }
+        if (!rows || rows.length !== 24) throw new Error("expected 24 hours");
+        var p = new Array(24), c = new Array(24);
+        rows.forEach(function (row) { p[+row.local_hour] = +row.eur_per_mwh; c[+row.local_hour] = +row.g_co2_per_kwh; });
+        return { p:p, c:c, live:true, rows:stats.rows_read || 0,
+                 ms: stats.elapsed ? stats.elapsed * 1000 : (performance.now() - t0) };
+      });
+  }
+
+  function loadAppliances() {
+    return fetch(SB + "/rest/v1/appliances?select=id,name,kwh_per_use,hours_needed&order=id", { headers:SBH })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (rows) {
+        if (!Array.isArray(rows) || !rows.length) throw new Error("no rows");
+        pgLive = true; return rows;
+      });
+  }
+
+  function addAppliance(name, kwh, hours) {
+    return fetch(SB + "/rest/v1/appliances", {
+      method:"POST",
+      headers:{ apikey:SBK, Authorization:"Bearer " + SBK, "Content-Type":"application/json", Prefer:"return=representation" },
+      body: JSON.stringify({ name:name, kwh_per_use:kwh, hours_needed:hours })
+    }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("HTTP " + r.status)); });
+      return r.json();
+    });
+  }
+
+  function windows(series, h) {
+    h = Math.max(1, Math.min(24, h | 0));
+    var bS = 0, bSum = Infinity, wS = 0, wSum = -Infinity;
+    for (var s = 0; s < 24; s++) {
+      var sum = 0;
+      for (var i = 0; i < h; i++) sum += series[(s + i) % 24];
+      if (sum < bSum) { bSum = sum; bS = s; }
+      if (sum > wSum) { wSum = sum; wS = s; }
+    }
+    return { best:bS, worst:wS, h:h };
+  }
+  function meanOver(series, start, h) {
+    var t = 0; for (var i = 0; i < h; i++) t += series[(start + i) % 24]; return t / h;
+  }
+  function inWindow(hour, start, h) {
+    for (var i = 0; i < h; i++) if ((start + i) % 24 === hour) return true;
+    return false;
+  }
+
+  function data() {
+    return cache[state.month] || { p:FALLBACK[state.month].p, c:FALLBACK[state.month].c, live:false };
+  }
+  function current() {
+    for (var i = 0; i < appliances.length; i++) if (appliances[i].id === state.applianceId) return appliances[i];
+    return appliances[0];
+  }
+
+  function setChips() {
+    var ch = $("chipCH"), pg = $("chipPG");
+    if (gridStatus && gridStatus.live) {
+      ch.className = "chip on";
+      $("chipCHText").textContent = "ClickHouse · " +
+        (gridStatus.rows ? num(gridStatus.rows) + " rows / " : "") + Math.round(gridStatus.ms) + " ms";
+    } else {
+      ch.className = "chip";
+      $("chipCHText").textContent = (CONFIG.endpointId && CONFIG.keyId)
+        ? "ClickHouse · offline copy" : "ClickHouse · not connected";
+    }
+    pg.className = pgLive ? "chip on" : "chip";
+    $("chipPGText").textContent = pgLive ? "Postgres · live" : "Postgres · built-in list";
+  }
+
+  function renderAppliances() {
+    var row = $("applianceRow");
+    row.innerHTML = "";
+    appliances.forEach(function (a) {
+      var b = document.createElement("button");
+      b.className = "app";
+      b.setAttribute("aria-pressed", a.id === state.applianceId ? "true" : "false");
+      b.innerHTML = '<span class="n"></span><span class="m"></span>';
+      b.querySelector(".n").textContent = a.name;
+      b.querySelector(".m").textContent = (+a.kwh_per_use) + " kWh · " + (+a.hours_needed) + " h";
+      b.addEventListener("click", function () {
+        state.applianceId = a.id;
+        // A heat pump does not "run 4x a month" - it runs every day. Anything
+        // that needs 8+ hours is a continuous load, so default it to daily.
+        // Once the user picks a frequency themselves, stop overriding.
+        if (!state.freqTouched) {
+          state.runs = (+a.hours_needed >= 8) ? 365 : 48;
+          $("freq").value = String(state.runs);
+        }
+        renderAppliances(); render();
+      });
+      row.appendChild(b);
+    });
+    var add = document.createElement("button");
+    add.className = "app add";
+    add.setAttribute("aria-pressed", "false");
+    add.innerHTML = '<span class="n">+ Add</span>';
+    add.addEventListener("click", function () { $("addBox").classList.add("open"); $("fName").focus(); });
+    row.appendChild(add);
+  }
+
+  function render() {
+    var d = data(), a = current();
+    if (!a) return;
+
+    var h = Math.max(1, Math.min(24, a.hours_needed || 1));
+    var kwh = +a.kwh_per_use || 0;
+    var w = windows(state.mode === "money" ? d.p : d.c, h);
+
+    var bestEur  = meanOver(d.p, w.best,  h) / 1000 * kwh;
+    var worstEur = meanOver(d.p, w.worst, h) / 1000 * kwh;
+    var bestKg   = meanOver(d.c, w.best,  h) * kwh / 1000;
+    var worstKg  = meanOver(d.c, w.worst, h) * kwh / 1000;
+
+    $("eyebrow").textContent = "Best window in " + MONTHS[state.month - 1];
+    $("windowText").innerHTML = pad(w.best) + '<span class="dash">–</span>' + pad(w.best + h);
+    $("whyText").innerHTML =
+      "Save <span class=\"g\">" + eur(worstEur - bestEur) + "</span> and " +
+      "<span class=\"g\">" + (worstKg - bestKg).toFixed(1) + " kg</span> versus " +
+      "<span class=\"e\">" + pad(w.worst) + "</span>. Needs " + h + " h, " + kwh + " kWh.";
+
+    $("saveEur").textContent = eur(worstEur - bestEur);
+    $("saveCo2").textContent = (worstKg - bestKg).toFixed(1) + " kg CO₂ per run";
+
+    $("bestVal").textContent = eur(bestEur);
+    $("bestSub").textContent = pad(w.best) + "–" + pad(w.best + h) + " · " + bestKg.toFixed(1) + " kg";
+    $("worstLbl").textContent = state.mode === "money" ? "Worst window" : "Dirtiest window";
+    $("worstVal").textContent = eur(worstEur);
+    $("worstSub").textContent = pad(w.worst) + "–" + pad(w.worst + h) + " · " + worstKg.toFixed(1) + " kg";
+
+    var wm = windows(d.p, h), wc = windows(d.c, h);
+    if (wm.best !== wc.best) {
+      var extraEur = Math.abs((meanOver(d.p, wc.best, h) - meanOver(d.p, wm.best, h)) / 1000 * kwh);
+      var savedKg  = Math.abs((meanOver(d.c, wm.best, h) - meanOver(d.c, wc.best, h)) * kwh / 1000);
+      $("conflict").hidden = false;
+      $("conflictTitle").textContent = "In " + MONTHS[state.month - 1] + " the cheapest window is not the cleanest";
+      $("conflictText").textContent =
+        "Cheapest " + pad(wm.best) + " · cleanest " + pad(wc.best) +
+        (savedKg > 0.005 ? " · going clean costs €" + (extraEur / savedKg).toFixed(2) + " per kg" : "");
+    } else { $("conflict").hidden = true; }
+
+    $("chartNote").textContent = "Hover for exact values.";
+
+    // The year is not twelve copies of this month. January's best window is
+    // 00:00-06:00 and worth €2.61; August's is 11:00-17:00 and worth €5.01.
+    // So walk all twelve months and give each its own window and its share
+    // of the runs.
+    var perMonth = state.runs / 12, yEur = 0, yKg = 0;
+    for (var mm = 1; mm <= 12; mm++) {
+      var dm = cache[mm] || FALLBACK[mm];
+      var wmm = windows(state.mode === "money" ? dm.p : dm.c, h);
+      yEur += (meanOver(dm.p, wmm.worst, h) - meanOver(dm.p, wmm.best, h)) / 1000 * kwh * perMonth;
+      yKg  += (meanOver(dm.c, wmm.worst, h) - meanOver(dm.c, wmm.best, h)) * kwh / 1000 * perMonth;
+    }
+    $("yearEur").textContent = "€" + Math.round(yEur);
+    $("yearCo2").textContent = Math.round(yKg) + " kg";
+    $("yearRuns").textContent = state.runs;
+    $("yearNote").textContent = "Each month with its own window. A ceiling, not a promise.";
+
+    drawChart(d, w.best, w.worst, h);
+    setChips();
+  }
+
+  var GEO = { W:900, H:300, padL:52, padR:52, padT:28, padB:42 };
+
+  function drawChart(d, bestS, worstS, h) {
+    var g = GEO, iw = g.W - g.padL - g.padR, ih = g.H - g.padT - g.padB;
+    var maxP = Math.max.apply(null, d.p), minP = Math.min.apply(null, d.p);
+    var maxC = Math.max.apply(null, d.c), minC = Math.min.apply(null, d.c);
+    var base = minP * 0.8, span = (maxP - base) || 1;
+    var bw = iw / 24, s = "";
+
+    for (var t = 0; t <= 3; t++) {
+      var v = base + span * (t / 3);
+      var gy = g.padT + ih - (v - base) / span * ih;
+      s += '<line x1="' + g.padL + '" y1="' + gy.toFixed(1) + '" x2="' + (g.W - g.padR) +
+           '" y2="' + gy.toFixed(1) + '" stroke="var(--grid)" stroke-width="1"/>';
+      s += '<text x="' + (g.padL - 9) + '" y="' + (gy + 3.5).toFixed(1) +
+           '" text-anchor="end" font-size="10.5" fill="var(--ink-3)" font-family="var(--mono)">' +
+           Math.round(v) + '</text>';
+    }
+
+    for (var i = 0; i < 24; i++) {
+      var bh = (d.p[i] - base) / span * ih;
+      if (!(bh > 2)) bh = 2;
+      var x = g.padL + i * bw + 2, y = g.padT + ih - bh;
+      var fill = inWindow(i, bestS, h) ? "var(--good)" : (inWindow(i, worstS, h) ? "var(--bad)" : "var(--bar)");
+      s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + (bw - 4).toFixed(1) +
+           '" height="' + bh.toFixed(1) + '" rx="3" fill="' + fill + '"/>';
+    }
+
+    var pts = [], cspan = (maxC - minC * 0.92) || 1;
+    for (var k = 0; k < 24; k++) {
+      var cx = g.padL + k * bw + bw / 2;
+      var cy = g.padT + ih - (d.c[k] - minC * 0.92) / cspan * ih;
+      pts.push(cx.toFixed(1) + "," + cy.toFixed(1));
+    }
+    s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="var(--ink-3)" stroke-width="1.7" stroke-dasharray="4 4" stroke-linejoin="round" stroke-linecap="round"/>';
+
+    var nh = berlinHour();
+    var nx = g.padL + nh * bw + bw / 2;
+    s += '<line x1="' + nx.toFixed(1) + '" y1="' + (g.padT - 4) + '" x2="' + nx.toFixed(1) +
+         '" y2="' + (g.padT + ih) + '" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 3" opacity=".5"/>';
+    s += '<text x="' + nx.toFixed(1) + '" y="' + (g.padT - 10) +
+         '" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--ink)" font-family="var(--mono)">NOW</text>';
+
+    for (var q = 0; q < 24; q += 3) {
+      s += '<text x="' + (g.padL + q * bw + bw / 2).toFixed(1) + '" y="' + (g.H - 16) +
+           '" text-anchor="middle" font-size="10.5" fill="var(--ink-3)" font-family="var(--mono)">' + pad(q) + '</text>';
+    }
+    s += '<text x="' + g.padL + '" y="' + (g.padT - 12) + '" font-size="10" fill="var(--ink-3)" font-family="var(--mono)">€/MWh</text>';
+    s += '<text x="' + (g.W - g.padR) + '" y="' + (g.padT - 12) +
+         '" text-anchor="end" font-size="10" fill="var(--ink-3)" font-family="var(--mono)">gCO₂/kWh</text>';
+
+    $("chart").innerHTML = s;
+  }
+
+  (function () {
+    var wrap = $("chartWrap"), svg = $("chart"), tip = $("tip");
+    wrap.addEventListener("mousemove", function (ev) {
+      var d = data(), a = current();
+      if (!a) return;
+      var r = svg.getBoundingClientRect();
+      var scale = r.width / GEO.W;
+      var iw = GEO.W - GEO.padL - GEO.padR;
+      var idx = Math.floor(((ev.clientX - r.left) / scale - GEO.padL) / (iw / 24));
+      if (idx < 0 || idx > 23) { tip.classList.remove("show"); return; }
+      var kwh = +a.kwh_per_use || 0, hrs = Math.max(1, a.hours_needed || 1);
+      tip.innerHTML = "<b>" + pad(idx) + "</b><br>" + d.p[idx].toFixed(0) + " €/MWh<br>" +
+                      d.c[idx].toFixed(0) + " gCO₂/kWh<br>≈ " + eur(d.p[idx] / 1000 * kwh / hrs) + " per hour";
+      tip.style.left = ((GEO.padL + idx * (iw / 24) + (iw / 24) / 2) * scale) + "px";
+      tip.style.top = (r.height * 0.44) + "px";
+      tip.classList.add("show");
+    });
+    wrap.addEventListener("mouseleave", function () { tip.classList.remove("show"); });
+  })();
+
+  function refreshGrid() {
+    if (cache[state.month]) { gridStatus = cache[state.month]; render(); return; }
+    render();
+    fetchMonth(state.month).then(function (d) { cache[state.month] = d; gridStatus = d; render(); })
+      .catch(function () { gridStatus = null; setChips(); });
+  }
+
+  var sel = $("month");
+  for (var m = 0; m < 12; m++) {
+    var o = document.createElement("option");
+    o.value = String(m + 1); o.textContent = MONTHS[m];
+    sel.appendChild(o);
+  }
+  sel.value = String(state.month);
+  sel.addEventListener("change", function () { state.month = +sel.value; refreshGrid(); });
+  $("freq").addEventListener("change", function () { state.runs = +this.value; state.freqTouched = true; render(); });
+
+  (function () {
+    var a = $("m-money"), b = $("m-co2");
+    a.addEventListener("click", function () { state.mode="money"; a.setAttribute("aria-pressed","true"); b.setAttribute("aria-pressed","false"); render(); });
+    b.addEventListener("click", function () { state.mode="co2";   b.setAttribute("aria-pressed","true"); a.setAttribute("aria-pressed","false"); render(); });
+  })();
+
+  $("fCancel").addEventListener("click", function () { $("addBox").classList.remove("open"); $("fErr").hidden = true; });
+
+  $("addBox").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var name = $("fName").value.trim(), kwh = parseFloat($("fKwh").value), hours = parseInt($("fHours").value, 10);
+    if (!name || !(kwh > 0) || !(hours >= 1)) return;
+    var btn = $("fSave");
+    btn.disabled = true; btn.textContent = "Saving…"; $("fErr").hidden = true;
+    addAppliance(name, kwh, hours).then(function (rows) {
+      var row = Array.isArray(rows) ? rows[0] : rows;
+      appliances.push(row); state.applianceId = row.id;
+      $("fName").value = ""; $("fKwh").value = ""; $("fHours").value = "";
+      $("addBox").classList.remove("open");
+      renderAppliances(); render();
+    }).catch(function (err) {
+      $("fErr").textContent = "Could not save: " + err.message; $("fErr").hidden = false;
+    }).then(function () { btn.disabled = false; btn.textContent = "Add"; });
+  });
+
+  appliances = FALLBACK_APPLIANCES.slice();
+  state.applianceId = appliances[0].id;
+  renderAppliances();
+  refreshGrid();
+
+  loadAppliances().then(function (rows) {
+    appliances = rows; state.applianceId = rows[0].id;
+    renderAppliances(); render();
+  }).catch(function () { pgLive = false; setChips(); });
+})();
+</script>
+</body>
+</html>
